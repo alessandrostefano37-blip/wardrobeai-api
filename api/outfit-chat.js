@@ -15,12 +15,7 @@ module.exports = async function handler(req, res) {
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
 
-    const {
-      request,
-      profile,
-      weather,
-      garments,
-    } = body || {};
+    const { request, profile, weather, garments } = body || {};
 
     if (!request) {
       return res.status(400).json({ error: 'Request mancante' });
@@ -35,21 +30,49 @@ module.exports = async function handler(req, res) {
 
     const instructions = `
 Sei WardrobeAI, uno stylist personale pratico, concreto e credibile.
-Rispondi in italiano.
-Usa SOLO i dati ricevuti.
-Non inventare capi non presenti.
-Dai una risposta utile e leggibile.
+Rispondi sempre in italiano.
 
-Struttura la risposta così:
-- una breve introduzione
-- 3 proposte outfit
-- per ogni proposta: capi consigliati e perché funziona
-- una chiusura con eventuale miglioramento guardaroba
+Regole fondamentali:
+- Usa SOLO i dati ricevuti.
+- Non inventare capi non presenti.
+- Non usare markdown.
+- Non usare simboli come #, ##, ###, **, *, - ripetuti in stile markdown.
+- Scrivi in testo pulito, leggibile, naturale.
+- Non fare promesse su meteo live se non lo hai davvero nei dati.
+- Se la richiesta cita una città o un momento specifico, confrontali con il meteo ricevuto.
+- Se il meteo ricevuto non sembra riferito alla città richiesta, dichiaralo chiaramente in una frase breve.
+- Se temperatura, pioggia, vento o fresco lo suggeriscono, dai un consiglio pratico tipo giacca, maglioncino, soprabito o layer.
+- Se nel guardaroba non esiste un capo adatto al freddo o alla pioggia, dillo chiaramente.
+
+Formato risposta:
+Introduzione breve di 2-3 righe massimo.
+
+Poi scrivi:
+Proposta 1
+Capi consigliati: ...
+Perché funziona: ...
+
+Proposta 2
+Capi consigliati: ...
+Perché funziona: ...
+
+Proposta 3
+Capi consigliati: ...
+Perché funziona: ...
+
+Chiudi con:
+Consiglio pratico: ...
+
+Nella risposta inserisci sempre una frase chiara sul meteo usato, per esempio:
+"Meteo considerato: Torino, 14°, pioggia leggera."
+oppure
+"Hai chiesto Torino, ma nei dati ricevuti ho solo il meteo salvato di Breganzona: userò quello come riferimento."
 
 Tono:
-- chiaro
-- sintetico ma non freddo
+- elegante ma semplice
 - utile davvero
+- concreto
+- niente testo troppo lungo
 `.trim();
 
     const response = await client.responses.create({
@@ -59,8 +82,18 @@ Tono:
       max_output_tokens: 700,
     });
 
+    const rawText =
+      response.output_text || 'Non sono riuscito a generare una risposta utile.';
+
+    const cleanedText = rawText
+      .replace(/^#{1,6}\s*/gm, '')
+      .replace(/\*\*(.*?)\*\*/g, '$1')
+      .replace(/\*(.*?)\*/g, '$1')
+      .replace(/```/g, '')
+      .trim();
+
     return res.status(200).json({
-      text: response.output_text || 'Non sono riuscito a generare una risposta utile.',
+      text: cleanedText,
     });
   } catch (error) {
     console.error('Errore outfit-chat:', error);
