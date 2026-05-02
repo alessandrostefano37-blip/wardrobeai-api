@@ -53,7 +53,7 @@ Tono:
 `.trim();
 
     const response = await client.responses.create({
-      model: process.env.OPENAI_MODEL || 'gpt-5.5',
+      model: process.env.OPENAI_MODEL || 'gpt-5.4-mini',
       instructions,
       input: JSON.stringify(compactPayload),
       max_output_tokens: 700,
