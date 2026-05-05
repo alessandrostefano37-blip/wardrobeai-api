@@ -10,6 +10,76 @@ function capitalizeWords(text) {
     .join(' ');
 }
 
+function detectLanguage(request, profile) {
+  const text = normalize(request);
+  const profileLanguage = normalize(profile?.language || '');
+
+  if (profileLanguage.includes('english')) {
+    return 'en';
+  }
+
+  if (profileLanguage.includes('ital')) {
+    return 'it';
+  }
+
+  const englishMarkers = [
+    'what',
+    'how',
+    'wear',
+    'outfit',
+    'tonight',
+    'tomorrow',
+    'evening',
+    'morning',
+    'afternoon',
+    'dinner',
+    'aperitif',
+    'office',
+    'weekend',
+    'casual',
+    'elegant',
+    'please',
+    'with',
+    'for',
+    'in ',
+  ];
+
+  const italianMarkers = [
+    'cosa',
+    'come',
+    'metto',
+    'indosso',
+    'stasera',
+    'domani',
+    'sera',
+    'mattina',
+    'pomeriggio',
+    'cena',
+    'aperitivo',
+    'ufficio',
+    'weekend',
+    'casual',
+    'elegante',
+    'con',
+    'per',
+    'a ',
+    'in ',
+  ];
+
+  let enScore = 0;
+  let itScore = 0;
+
+  englishMarkers.forEach((word) => {
+    if (text.includes(word)) enScore += 1;
+  });
+
+  italianMarkers.forEach((word) => {
+    if (text.includes(word)) itScore += 1;
+  });
+
+  return enScore > itScore ? 'en' : 'it';
+}
+
 function extractRequestedCity(request) {
   const text = normalize(request);
 
@@ -31,6 +101,17 @@ function extractRequestedCity(request) {
     'look',
     'outfit',
     'chat',
+    'home',
+    'office',
+    'work',
+    'school',
+    'tonight',
+    'tomorrow',
+    'morning',
+    'afternoon',
+    'evening',
+    'dinner',
+    'aperitif',
   ];
 
   for (const pattern of patterns) {
@@ -51,34 +132,64 @@ function extractRequestedCity(request) {
 function detectRequestedMoment(request) {
   const text = normalize(request);
 
-  if (text.includes('domani sera')) return 'domani sera';
-  if (text.includes('stasera') || text.includes('questa sera')) return 'stasera';
-  if (text.includes('domani mattina')) return 'domani mattina';
-  if (text.includes('domani pomeriggio')) return 'domani pomeriggio';
-  if (text.includes('domani')) return 'domani';
-  if (text.includes('mattina')) return 'mattina';
-  if (text.includes('pomeriggio')) return 'pomeriggio';
-  if (text.includes('sera')) return 'sera';
+  if (text.includes('domani sera') || text.includes('tomorrow evening')) {
+    return 'tomorrow evening';
+  }
+  if (text.includes('stasera') || text.includes('questa sera') || text.includes('tonight')) {
+    return 'tonight';
+  }
+  if (text.includes('domani mattina') || text.includes('tomorrow morning')) {
+    return 'tomorrow morning';
+  }
+  if (text.includes('domani pomeriggio') || text.includes('tomorrow afternoon')) {
+    return 'tomorrow afternoon';
+  }
+  if (text.includes('domani') || text.includes('tomorrow')) {
+    return 'tomorrow';
+  }
+  if (text.includes('mattina') || text.includes('morning')) {
+    return 'morning';
+  }
+  if (text.includes('pomeriggio') || text.includes('afternoon')) {
+    return 'afternoon';
+  }
+  if (text.includes('sera') || text.includes('evening')) {
+    return 'evening';
+  }
 
-  return 'adesso';
+  return 'now';
 }
 
 function mapWeatherCodeToCondition(code) {
   if (code == null) return '';
 
-  if (code === 0) return 'sereno';
-  if ([1, 2, 3, 45, 48].includes(code)) return 'nuvoloso';
+  if (code === 0) return 'clear';
+  if ([1, 2, 3, 45, 48].includes(code)) return 'cloudy';
   if ([51, 53, 55, 56, 57, 61, 63, 65, 80, 81, 82].includes(code)) {
-    return 'pioggia';
+    return 'rain';
   }
   if ([66, 67, 71, 73, 75, 77, 85, 86].includes(code)) {
-    return 'freddo';
+    return 'cold';
   }
   if ([95, 96, 99].includes(code)) {
-    return 'vento';
+    return 'wind';
   }
 
-  return 'nuvoloso';
+  return 'cloudy';
+}
+
+function localizeCondition(condition, language) {
+  const map = {
+    clear: language === 'en' ? 'clear' : 'sereno',
+    cloudy: language === 'en' ? 'cloudy' : 'nuvoloso',
+    rain: language === 'en' ? 'rain' : 'pioggia',
+    cold: language === 'en' ? 'cold' : 'freddo',
+    hot: language === 'en' ? 'hot' : 'caldo',
+    wind: language === 'en' ? 'windy' : 'vento',
+    '': '',
+  };
+
+  return map[condition] ?? condition;
 }
 
 function temperatureToExtraCondition(temperature, baseCondition) {
@@ -87,20 +198,20 @@ function temperatureToExtraCondition(temperature, baseCondition) {
   }
 
   if (temperature >= 26) {
-    return 'caldo';
+    return 'hot';
   }
 
   if (temperature <= 8) {
-    return 'freddo';
+    return 'cold';
   }
 
   return baseCondition;
 }
 
 function formatHourForMoment(moment) {
-  if (moment === 'mattina' || moment === 'domani mattina') return 9;
-  if (moment === 'pomeriggio' || moment === 'domani pomeriggio') return 15;
-  if (moment === 'sera' || moment === 'stasera' || moment === 'domani sera') {
+  if (moment === 'morning' || moment === 'tomorrow morning') return 9;
+  if (moment === 'afternoon' || moment === 'tomorrow afternoon') return 15;
+  if (moment === 'evening' || moment === 'tonight' || moment === 'tomorrow evening') {
     return 20;
   }
   return null;
@@ -167,19 +278,19 @@ async function getRequestedCityWeather(requestedCity) {
   const geoUrl =
     `https://geocoding-api.open-meteo.com/v1/search` +
     `?name=${encodeURIComponent(requestedCity)}` +
-    `&count=1&language=it&format=json`;
+    `&count=1&format=json`;
 
   const geoResponse = await fetch(geoUrl);
 
   if (!geoResponse.ok) {
-    throw new Error('Errore geocoding città');
+    throw new Error('City geocoding failed');
   }
 
   const geoData = await geoResponse.json();
   const first = geoData?.results?.[0];
 
   if (!first) {
-    throw new Error('Città non trovata');
+    throw new Error('City not found');
   }
 
   const cityName = first.name;
@@ -198,7 +309,7 @@ async function getRequestedCityWeather(requestedCity) {
   const weatherResponse = await fetch(weatherUrl);
 
   if (!weatherResponse.ok) {
-    throw new Error('Errore meteo città richiesta');
+    throw new Error('Weather fetch failed');
   }
 
   const weatherData = await weatherResponse.json();
@@ -213,23 +324,23 @@ async function getRequestedCityWeather(requestedCity) {
   };
 }
 
-function buildWeatherPayloadFromRequestedCity(cityWeather, requestedMoment) {
+function buildWeatherPayloadFromRequestedCity(cityWeather, requestedMoment, language) {
   const currentTemp = cityWeather.current?.temperature_2m;
   const currentCode = cityWeather.current?.weather_code;
 
   let selectedTemp = currentTemp;
   let selectedCode = currentCode;
-  let label = 'adesso';
+  let label = language === 'en' ? 'now' : 'adesso';
 
   const targetHour = formatHourForMoment(requestedMoment);
 
   if (targetHour !== null && Array.isArray(cityWeather.hourly?.time)) {
     const baseDate = getDatePartsInTimeZone(cityWeather.timezone);
     const needsTomorrow =
-      requestedMoment === 'domani' ||
-      requestedMoment === 'domani sera' ||
-      requestedMoment === 'domani mattina' ||
-      requestedMoment === 'domani pomeriggio';
+      requestedMoment === 'tomorrow' ||
+      requestedMoment === 'tomorrow evening' ||
+      requestedMoment === 'tomorrow morning' ||
+      requestedMoment === 'tomorrow afternoon';
 
     const finalDate = addDaysToDateParts(
       baseDate,
@@ -263,10 +374,19 @@ function buildWeatherPayloadFromRequestedCity(cityWeather, requestedMoment) {
     city: cityWeather.city,
     temperature:
       typeof selectedTemp === 'number' ? String(Math.round(selectedTemp)) : '',
-    condition,
+    condition: localizeCondition(condition, language),
     source: 'requested-city',
     contextLabel: label,
   };
+}
+
+function cleanText(text) {
+  return (text || '')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/```/g, '')
+    .trim();
 }
 
 module.exports = async function handler(req, res) {
@@ -276,7 +396,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: 'OPENAI_API_KEY mancante' });
+      return res.status(500).json({ error: 'OPENAI_API_KEY missing' });
     }
 
     const OpenAI = (await import('openai')).default;
@@ -288,9 +408,10 @@ module.exports = async function handler(req, res) {
     const { request, profile, weather, garments } = body || {};
 
     if (!request) {
-      return res.status(400).json({ error: 'Request mancante' });
+      return res.status(400).json({ error: 'Missing request' });
     }
 
+    const language = detectLanguage(request, profile);
     const requestedCity = extractRequestedCity(request);
     const requestedMoment = detectRequestedMoment(request);
 
@@ -302,19 +423,31 @@ module.exports = async function handler(req, res) {
         const cityWeather = await getRequestedCityWeather(requestedCity);
         const liveWeather = buildWeatherPayloadFromRequestedCity(
           cityWeather,
-          requestedMoment
+          requestedMoment,
+          language
         );
 
         weatherForAI = liveWeather;
-        weatherNote = `Sto usando il meteo della città richiesta: ${liveWeather.city}, ${liveWeather.temperature}°, ${liveWeather.condition}, contesto: ${liveWeather.contextLabel}.`;
+
+        weatherNote =
+          language === 'en'
+            ? `I am using the weather for the requested city: ${liveWeather.city}, ${liveWeather.temperature}°, ${liveWeather.condition}, context: ${liveWeather.contextLabel}.`
+            : `Sto usando il meteo della città richiesta: ${liveWeather.city}, ${liveWeather.temperature}°, ${liveWeather.condition}, contesto: ${liveWeather.contextLabel}.`;
       } catch (error) {
-        weatherNote = `Non sono riuscito a recuperare il meteo per ${requestedCity}. Uso il meteo salvato disponibile nell'app.`;
+        weatherNote =
+          language === 'en'
+            ? `I could not retrieve the weather for ${requestedCity}. I will use the weather currently saved in the app.`
+            : `Non sono riuscito a recuperare il meteo per ${requestedCity}. Userò il meteo salvato disponibile nell'app.`;
       }
     } else {
-      weatherNote = `Sto usando il meteo salvato disponibile nell'app.`;
+      weatherNote =
+        language === 'en'
+          ? `I am using the weather currently saved in the app.`
+          : `Sto usando il meteo salvato disponibile nell'app.`;
     }
 
     const compactPayload = {
+      language,
       request: request || '',
       profile: profile || {},
       weather: weatherForAI || {},
@@ -322,19 +455,54 @@ module.exports = async function handler(req, res) {
       garments: Array.isArray(garments) ? garments.slice(0, 24) : [],
     };
 
-    const instructions = `
-Sei WardrobeAI, uno stylist personale pratico, concreto e credibile.
-Rispondi sempre in italiano.
+    const instructions =
+      language === 'en'
+        ? `
+You are WardrobeAI, a practical, credible and style-aware personal stylist.
+Reply only in English.
 
-Regole fondamentali:
+Rules:
+- Use ONLY the provided data.
+- Do not invent garments that are not present.
+- Do not use markdown.
+- Do not use symbols such as #, ##, ###, **, *.
+- Write clean, natural text.
+- Clearly explain which weather you are using.
+- If it is cool, rainy, windy or it is an evening plan, give a practical layer suggestion such as jacket, knitwear, coat or overshirt.
+- If a useful garment is missing, say it clearly.
+
+Reply format:
+Brief introduction.
+
+Weather considered: ...
+
+Proposal 1
+Suggested garments: ...
+Why it works: ...
+
+Proposal 2
+Suggested garments: ...
+Why it works: ...
+
+Proposal 3
+Suggested garments: ...
+Why it works: ...
+
+Practical advice: ...
+`.trim()
+        : `
+Sei WardrobeAI, uno stylist personale pratico, concreto e credibile.
+Rispondi solo in italiano.
+
+Regole:
 - Usa SOLO i dati ricevuti.
 - Non inventare capi non presenti.
 - Non usare markdown.
 - Non usare simboli come #, ##, ###, **, *.
-- Scrivi in testo pulito, naturale e leggibile.
+- Scrivi in testo pulito e naturale.
 - Spiega chiaramente quale meteo stai usando.
-- Se fa fresco, piove, c'è vento o è sera, dai un consiglio pratico su giacca, maglioncino, soprabito o layer.
-- Se manca un capo utile per il meteo, dillo chiaramente.
+- Se fa fresco, piove, c'è vento o è una situazione serale, dai un consiglio pratico su giacca, maglioncino, soprabito o layer.
+- Se manca un capo utile, dillo chiaramente.
 
 Formato risposta:
 Introduzione breve.
@@ -364,19 +532,17 @@ Consiglio pratico: ...
     });
 
     const rawText =
-      response.output_text || 'Non sono riuscito a generare una risposta utile.';
+      response.output_text || (language === 'en'
+        ? 'I could not generate a useful answer.'
+        : 'Non sono riuscito a generare una risposta utile.');
 
-    const cleanedText = rawText
-      .replace(/^#{1,6}\s*/gm, '')
-      .replace(/\*\*(.*?)\*\*/g, '$1')
-      .replace(/\*(.*?)\*/g, '$1')
-      .replace(/```/g, '')
-      .trim();
+    const cleanedText = cleanText(rawText);
 
     return res.status(200).json({
       text: cleanedText,
       usedWeather: weatherForAI,
       weatherNote,
+      language,
     });
   } catch (error) {
     console.error('Errore outfit-chat:', error);
