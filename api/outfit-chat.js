@@ -14,14 +14,6 @@ function detectLanguage(request, profile) {
   const text = normalize(request);
   const profileLanguage = normalize(profile?.language || '');
 
-  if (profileLanguage.includes('english')) {
-    return 'en';
-  }
-
-  if (profileLanguage.includes('ital')) {
-    return 'it';
-  }
-
   const englishMarkers = [
     'what',
     'how',
@@ -29,6 +21,7 @@ function detectLanguage(request, profile) {
     'outfit',
     'tonight',
     'tomorrow',
+    'night',
     'evening',
     'morning',
     'afternoon',
@@ -36,12 +29,9 @@ function detectLanguage(request, profile) {
     'aperitif',
     'office',
     'weekend',
-    'casual',
-    'elegant',
     'please',
     'with',
     'for',
-    'in ',
   ];
 
   const italianMarkers = [
@@ -51,6 +41,7 @@ function detectLanguage(request, profile) {
     'indosso',
     'stasera',
     'domani',
+    'notte',
     'sera',
     'mattina',
     'pomeriggio',
@@ -58,12 +49,8 @@ function detectLanguage(request, profile) {
     'aperitivo',
     'ufficio',
     'weekend',
-    'casual',
-    'elegante',
     'con',
     'per',
-    'a ',
-    'in ',
   ];
 
   let enScore = 0;
@@ -77,14 +64,58 @@ function detectLanguage(request, profile) {
     if (text.includes(word)) itScore += 1;
   });
 
-  return enScore > itScore ? 'en' : 'it';
+  if (enScore !== itScore) {
+    return enScore > itScore ? 'en' : 'it';
+  }
+
+  if (profileLanguage.includes('english')) return 'en';
+  if (profileLanguage.includes('ital')) return 'it';
+
+  return 'it';
+}
+
+function cleanCityCandidate(candidate) {
+  const trailingStopWords = [
+    'tonight',
+    'tomorrow',
+    'night',
+    'evening',
+    'morning',
+    'afternoon',
+    'now',
+    'stasera',
+    'domani',
+    'notte',
+    'sera',
+    'mattina',
+    'pomeriggio',
+    'adesso',
+  ];
+
+  let words = (candidate || '')
+    .split(/\s+/)
+    .map((w) => w.trim())
+    .filter(Boolean);
+
+  while (
+    words.length > 0 &&
+    trailingStopWords.includes(normalize(words[words.length - 1]))
+  ) {
+    words.pop();
+  }
+
+  if (words.length > 2) {
+    words = words.slice(0, 2);
+  }
+
+  return capitalizeWords(words.join(' '));
 }
 
 function extractRequestedCity(request) {
   const text = normalize(request);
 
   const patterns = [
-    /\b(?:a|ad|in)\s+([a-zà-öø-ÿ]+(?:\s+[a-zà-öø-ÿ]+)?)/i,
+    /\b(?:a|ad|in)\s+([a-zà-öø-ÿ]+(?:\s+[a-zà-öø-ÿ]+){0,2})/i,
   ];
 
   const blocked = [
@@ -107,6 +138,7 @@ function extractRequestedCity(request) {
     'school',
     'tonight',
     'tomorrow',
+    'night',
     'morning',
     'afternoon',
     'evening',
@@ -118,11 +150,15 @@ function extractRequestedCity(request) {
     const match = text.match(pattern);
     if (!match) continue;
 
-    const candidate = match[1].trim();
-    const firstWord = candidate.split(' ')[0];
+    const rawCandidate = match[1].trim();
+    const cleanedCandidate = cleanCityCandidate(rawCandidate);
+
+    if (!cleanedCandidate) continue;
+
+    const firstWord = normalize(cleanedCandidate.split(' ')[0]);
 
     if (!blocked.includes(firstWord)) {
-      return capitalizeWords(candidate);
+      return cleanedCandidate;
     }
   }
 
@@ -132,16 +168,26 @@ function extractRequestedCity(request) {
 function detectRequestedMoment(request) {
   const text = normalize(request);
 
+  if (text.includes('domani notte') || text.includes('tomorrow night')) {
+    return 'tomorrow night';
+  }
   if (text.includes('domani sera') || text.includes('tomorrow evening')) {
     return 'tomorrow evening';
   }
-  if (text.includes('stasera') || text.includes('questa sera') || text.includes('tonight')) {
+  if (
+    text.includes('stasera') ||
+    text.includes('questa sera') ||
+    text.includes('tonight')
+  ) {
     return 'tonight';
   }
   if (text.includes('domani mattina') || text.includes('tomorrow morning')) {
     return 'tomorrow morning';
   }
-  if (text.includes('domani pomeriggio') || text.includes('tomorrow afternoon')) {
+  if (
+    text.includes('domani pomeriggio') ||
+    text.includes('tomorrow afternoon')
+  ) {
     return 'tomorrow afternoon';
   }
   if (text.includes('domani') || text.includes('tomorrow')) {
@@ -152,6 +198,9 @@ function detectRequestedMoment(request) {
   }
   if (text.includes('pomeriggio') || text.includes('afternoon')) {
     return 'afternoon';
+  }
+  if (text.includes('notte') || text.includes('night')) {
+    return 'night';
   }
   if (text.includes('sera') || text.includes('evening')) {
     return 'evening';
@@ -211,8 +260,15 @@ function temperatureToExtraCondition(temperature, baseCondition) {
 function formatHourForMoment(moment) {
   if (moment === 'morning' || moment === 'tomorrow morning') return 9;
   if (moment === 'afternoon' || moment === 'tomorrow afternoon') return 15;
-  if (moment === 'evening' || moment === 'tonight' || moment === 'tomorrow evening') {
+  if (
+    moment === 'evening' ||
+    moment === 'tonight' ||
+    moment === 'tomorrow evening'
+  ) {
     return 20;
+  }
+  if (moment === 'night' || moment === 'tomorrow night') {
+    return 22;
   }
   return null;
 }
@@ -324,7 +380,11 @@ async function getRequestedCityWeather(requestedCity) {
   };
 }
 
-function buildWeatherPayloadFromRequestedCity(cityWeather, requestedMoment, language) {
+function buildWeatherPayloadFromRequestedCity(
+  cityWeather,
+  requestedMoment,
+  language
+) {
   const currentTemp = cityWeather.current?.temperature_2m;
   const currentCode = cityWeather.current?.weather_code;
 
@@ -340,7 +400,8 @@ function buildWeatherPayloadFromRequestedCity(cityWeather, requestedMoment, lang
       requestedMoment === 'tomorrow' ||
       requestedMoment === 'tomorrow evening' ||
       requestedMoment === 'tomorrow morning' ||
-      requestedMoment === 'tomorrow afternoon';
+      requestedMoment === 'tomorrow afternoon' ||
+      requestedMoment === 'tomorrow night';
 
     const finalDate = addDaysToDateParts(
       baseDate,
@@ -532,7 +593,8 @@ Consiglio pratico: ...
     });
 
     const rawText =
-      response.output_text || (language === 'en'
+      response.output_text ||
+      (language === 'en'
         ? 'I could not generate a useful answer.'
         : 'Non sono riuscito a generare una risposta utile.');
 
